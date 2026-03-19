@@ -1,0 +1,11 @@
+.env
+node_modules/
+*.zip
+dist/
+build/
+.DS_Store
+.vscode/
+*.old
+*.log
+*copy.*
+* copy *.*
