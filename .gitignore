@@ -1,7 +1,8 @@
 .env
 node_modules/
 *.zip
-dist/
+dist/*.vkdb
+dist/*.json
 build/
 .DS_Store
 .vscode/
@@ -9,3 +10,5 @@ build/
 *.log
 *copy.*
 * copy *.*
+.gitignore
+*.spec
