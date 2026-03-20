@@ -7,7 +7,10 @@ Suport de grups i subgrups jeràrquics (arbre il·limitat).
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
+import csv
+import ftplib
 import json
+import tempfile
 import os
 import sys
 import base64
@@ -40,6 +43,7 @@ def load_config() -> dict:
     """Carrega la configuració. Si no existeix, la crea amb valors per defecte."""
     defaults = {
         "last_db_path": "",
+        "ftp_last": {},
     }
     path = _get_config_path()
     if os.path.exists(path):
@@ -411,6 +415,7 @@ class QmrClauApp:
         self.db_path = None
         self.master_password = None
         self.data = None
+        self.ftp_config = None
         self.current_group_id = None
         self.unsaved_changes = False
         self.clipboard_clear_id = None
@@ -445,6 +450,8 @@ class QmrClauApp:
         self._make_button(btn_frame, "📁  Crear Nova Base de Dades", self._new_db,
                         COLORS["accent"], width=28).pack(pady=5)
         self._make_button(btn_frame, "🔓  Obrir Base de Dades", self._open_db,
+                        COLORS["bg_entry"], width=28).pack(pady=5)
+        self._make_button(btn_frame, "🌐  Obrir des de FTP", self._open_ftp_db,
                         COLORS["bg_entry"], width=28).pack(pady=5)
 
         # Botó obrir darrera BD (només si existeix una ruta vàlida)
@@ -611,13 +618,24 @@ class QmrClauApp:
         with open(tmp, "wb") as f: f.write(blob)
         shutil.move(tmp, self.db_path)
         self.unsaved_changes = False; self._update_title()
+        if self.ftp_config:
+            try:
+                self._ftp_upload(self.ftp_config, self.db_path)
+            except Exception as e:
+                messagebox.showwarning("Avís FTP",
+                    f"Desat localment però no s'ha pogut pujar al FTP:\n{e}", parent=self.root)
 
     # ---- Interfície Principal ----
     def _clear_root(self):
         for w in self.root.winfo_children(): w.destroy()
 
     def _update_title(self):
-        name = os.path.basename(self.db_path) if self.db_path else "qmrClau"
+        if self.ftp_config:
+            name = f"🌐 {self.ftp_config['host']}{self.ftp_config['path']}"
+        elif self.db_path:
+            name = os.path.basename(self.db_path)
+        else:
+            name = "qmrClau"
         mod = " ●" if self.unsaved_changes else ""
         self.root.title(f"qmrClau — {name}{mod}")
 
@@ -637,6 +655,10 @@ class QmrClauApp:
         tb_right = tk.Frame(toolbar, bg=COLORS["bg_secondary"]); tb_right.pack(side="right", padx=8)
         btn_gen = self._make_small_button(tb_right, "⚡ Generador", self._show_password_generator, COLORS["accent"])
         btn_gen.pack(side="right", padx=2, pady=6); self._tip(btn_gen, "Obrir el generador de contrasenyes")
+        btn_exp = self._make_small_button(tb_right, "📤 Exportar", self._export_csv, COLORS["bg_entry"])
+        btn_exp.pack(side="right", padx=2, pady=6); self._tip(btn_exp, "Exportar totes les entrades a CSV (text pla)")
+        btn_imp = self._make_small_button(tb_right, "📥 Importar", self._import_csv, COLORS["bg_entry"])
+        btn_imp.pack(side="right", padx=2, pady=6); self._tip(btn_imp, "Importar entrades des d'un fitxer CSV")
 
         # Cerca global a la toolbar
         tb_center = tk.Frame(toolbar, bg=COLORS["bg_secondary"]); tb_center.pack(side="left", padx=(16, 8), fill="x", expand=True)
@@ -1225,6 +1247,9 @@ class QmrClauApp:
                 return  # Cancel·lar: no tancar
             if r:
                 self._save_db()
+        if self.ftp_config and self.db_path and os.path.exists(self.db_path):
+            try: os.unlink(self.db_path)
+            except: pass
         self.root.destroy()
 
     def _lock_db(self):
@@ -1232,7 +1257,11 @@ class QmrClauApp:
             r = messagebox.askyesnocancel("Canvis pendents", "Vols desar abans de tancar?", parent=self.root)
             if r is None: return
             if r: self._save_db()
+        if self.ftp_config and self.db_path and os.path.exists(self.db_path):
+            try: os.unlink(self.db_path)
+            except: pass
         self.master_password = None; self.data = None; self.db_path = None
+        self.ftp_config = None
         self._show_welcome()
 
     def _change_master_password(self):
@@ -1244,6 +1273,291 @@ class QmrClauApp:
         if not new: return
         self.master_password = new; self._save_db()
         messagebox.showinfo("Fet", "Contrasenya mestra canviada correctament.", parent=self.root)
+
+    # ---- FTP ----
+
+    def _ftp_connect(self, cfg):
+        if cfg.get("use_tls"):
+            ftp = ftplib.FTP_TLS()
+            ftp.connect(cfg["host"], cfg["port"], timeout=10)
+            ftp.login(cfg["user"], cfg["password"])
+            ftp.prot_p()
+        else:
+            ftp = ftplib.FTP()
+            ftp.connect(cfg["host"], cfg["port"], timeout=10)
+            ftp.login(cfg["user"], cfg["password"])
+        return ftp
+
+    def _ftp_download(self, cfg, local_path):
+        ftp = self._ftp_connect(cfg)
+        try:
+            with open(local_path, "wb") as f:
+                ftp.retrbinary(f"RETR {cfg['path']}", f.write)
+        finally:
+            ftp.quit()
+
+    def _ftp_upload(self, cfg, local_path):
+        ftp = self._ftp_connect(cfg)
+        try:
+            with open(local_path, "rb") as f:
+                ftp.storbinary(f"STOR {cfg['path']}", f)
+        finally:
+            ftp.quit()
+
+    def _ftp_dialog(self):
+        last = self.config.get("ftp_last", {})
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Connexió FTP")
+        dialog.configure(bg=COLORS["bg"])
+        dialog.resizable(False, False)
+        dialog.transient(self.root); dialog.grab_set()
+        self._center_dialog(dialog, 420, 430)
+        result = {"cfg": None}
+
+        tk.Label(dialog, text="🌐  Connexió FTP", font=("Segoe UI", 13, "bold"),
+                 fg=COLORS["accent_light"], bg=COLORS["bg"]).pack(pady=(18, 10))
+
+        ff = tk.Frame(dialog, bg=COLORS["bg"]); ff.pack(fill="x", padx=30)
+        entries = {}
+        for label, key, default, secret in [
+            ("Servidor:",       "host",     last.get("host", ""),         False),
+            ("Port:",           "port",     str(last.get("port", 21)),    False),
+            ("Usuari:",         "user",     last.get("user", ""),         False),
+            ("Contrasenya FTP:","password", "",                           True),
+            ("Ruta del fitxer:","path",     last.get("path", "/mydb.vkdb"), False),
+        ]:
+            tk.Label(ff, text=label, font=("Segoe UI", 9), fg=COLORS["text_dim"],
+                     bg=COLORS["bg"], anchor="w").pack(fill="x", pady=(6, 0))
+            e = tk.Entry(ff, show="●" if secret else "", font=("Segoe UI", 10),
+                         bg=COLORS["bg_entry"], fg=COLORS["text"],
+                         insertbackground=COLORS["text"], relief="flat", bd=0)
+            e.pack(fill="x", ipady=5); e.insert(0, default)
+            entries[key] = e
+
+        tls_var = tk.BooleanVar(value=last.get("use_tls", False))
+        tk.Checkbutton(ff, text="Connexió segura (FTPS)", variable=tls_var,
+                       font=("Segoe UI", 9), bg=COLORS["bg"], fg=COLORS["text"],
+                       selectcolor=COLORS["bg_entry"],
+                       activebackground=COLORS["bg"]).pack(anchor="w", pady=(10, 0))
+
+        def connect(event=None):
+            host = entries["host"].get().strip()
+            user = entries["user"].get().strip()
+            path = entries["path"].get().strip()
+            if not host or not user or not path:
+                messagebox.showwarning("Avís", "Omple servidor, usuari i ruta.", parent=dialog); return
+            try:
+                port = int(entries["port"].get().strip())
+            except ValueError:
+                messagebox.showwarning("Avís", "El port ha de ser un número.", parent=dialog); return
+            result["cfg"] = {"host": host, "port": port, "user": user,
+                             "password": entries["password"].get(),
+                             "path": path, "use_tls": tls_var.get()}
+            dialog.destroy()
+
+        entries["host"].focus_set()
+        bf = tk.Frame(dialog, bg=COLORS["bg"]); bf.pack(pady=(14, 0))
+        self._make_button(bf, "Connectar", connect, COLORS["accent"], width=12).pack(side="left", padx=(0, 8))
+        self._make_button(bf, "Cancel·lar", dialog.destroy, COLORS["bg_entry"], width=12).pack(side="left")
+        dialog.wait_window()
+        return result["cfg"]
+
+    def _open_ftp_db(self):
+        cfg = self._ftp_dialog()
+        if not cfg: return
+
+        # Desa la configuració sense contrasenya
+        self.config["ftp_last"] = {k: v for k, v in cfg.items() if k != "password"}
+        save_config(self.config)
+
+        # Descarrega a fitxer temporal
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".vkdb")
+        os.close(tmp_fd)
+        file_exists = True
+        try:
+            self._ftp_download(cfg, tmp_path)
+        except ftplib.error_perm as e:
+            if str(e).startswith("550"):
+                file_exists = False  # Fitxer no trobat al servidor
+            else:
+                os.unlink(tmp_path)
+                messagebox.showerror("Error FTP", f"No s'ha pogut accedir al fitxer:\n{e}", parent=self.root)
+                return
+        except Exception as e:
+            os.unlink(tmp_path)
+            messagebox.showerror("Error FTP", f"No s'ha pogut descarregar el fitxer:\n{e}", parent=self.root)
+            return
+
+        if not file_exists:
+            if not messagebox.askyesno("Fitxer no trobat",
+                    f"El fitxer «{cfg['path']}» no existeix al servidor.\n\n"
+                    "Vols crear una nova base de dades en aquesta ubicació?",
+                    parent=self.root):
+                os.unlink(tmp_path); return
+            pwd = self._ask_password("Crea la contrasenya mestra", confirm=True)
+            if not pwd:
+                os.unlink(tmp_path); return
+            data = _new_db_data()
+            blob = encrypt_db(data, pwd)
+            with open(tmp_path, "wb") as f: f.write(blob)
+            try:
+                self._ftp_upload(cfg, tmp_path)
+            except Exception as e:
+                os.unlink(tmp_path)
+                messagebox.showerror("Error FTP", f"No s'ha pogut crear el fitxer al servidor:\n{e}", parent=self.root)
+                return
+        else:
+            # Obre amb la contrasenya mestra
+            pwd = self._ask_password("Introdueix la contrasenya mestra")
+            if not pwd:
+                os.unlink(tmp_path); return
+            try:
+                with open(tmp_path, "rb") as f: blob = f.read()
+                data = decrypt_db(blob, pwd)
+                if "root" not in data: data = _migrate_v2_to_v3(data)
+            except ValueError as e:
+                os.unlink(tmp_path)
+                messagebox.showerror("Error", str(e), parent=self.root); return
+            except Exception as e:
+                os.unlink(tmp_path)
+                messagebox.showerror("Error", f"No s'ha pogut obrir: {e}", parent=self.root); return
+
+        self.data = data
+        self.db_path = tmp_path
+        self.master_password = pwd
+        self.ftp_config = cfg
+        root_node = self.data["root"]
+        self.current_group_id = (root_node["children"][0]["id"]
+                                 if root_node.get("children") else root_node["id"])
+        self._show_main()
+
+    # ---- Exportar / Importar CSV ----
+
+    def _collect_entries_for_export(self, group, parent_path, rows):
+        path = f"{parent_path}/{group['name']}" if parent_path else group["name"]
+        for entry in group.get("entries", []):
+            rows.append([
+                path,
+                entry.get("title", ""),
+                entry.get("username", ""),
+                entry.get("password", ""),
+                entry.get("url", ""),
+                entry.get("notes", ""),
+            ])
+        for child in group.get("children", []):
+            self._collect_entries_for_export(child, path, rows)
+
+    def _export_csv(self):
+        if not self.data:
+            return
+        pwd = self._ask_password("Confirma la contrasenya mestra")
+        if not pwd or pwd != self.master_password:
+            messagebox.showerror("Error", "Contrasenya incorrecta.", parent=self.root)
+            return
+        if not messagebox.askyesno("Advertència de seguretat",
+                "El fitxer CSV es desarà sense xifrar.\n"
+                "Les contrasenyes seran visibles en text pla.\n\n"
+                "Vols continuar?", parent=self.root):
+            return
+        path = filedialog.asksaveasfilename(title="Exportar a CSV",
+            defaultextension=".csv", filetypes=[("CSV", "*.csv"), ("Tots", "*.*")])
+        if not path:
+            return
+        rows = []
+        self._collect_entries_for_export(self.data["root"], "", rows)
+        try:
+            with open(path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+                writer.writerow(["Grup", "Títol", "Usuari", "Contrasenya", "URL", "Notes"])
+                writer.writerows(rows)
+            messagebox.showinfo("Exportació completada",
+                f"S'han exportat {len(rows)} entrades a:\n{path}", parent=self.root)
+        except Exception as e:
+            messagebox.showerror("Error", f"No s'ha pogut exportar:\n{e}", parent=self.root)
+
+    def _find_or_create_group_path(self, path_str):
+        if not path_str:
+            ch = self.data["root"].get("children", [])
+            return ch[0] if ch else self.data["root"]
+        parts = [p.strip() for p in path_str.replace("\\", "/").split("/") if p.strip()]
+        if parts and parts[0].lower() in ("arrel", "root"):
+            parts = parts[1:]
+        if not parts:
+            ch = self.data["root"].get("children", [])
+            return ch[0] if ch else self.data["root"]
+        current = self.data["root"]
+        for part in parts:
+            found = next((c for c in current.get("children", [])
+                          if c["name"].lower() == part.lower()), None)
+            if found:
+                current = found
+            else:
+                new_group = _make_group(part)
+                current.setdefault("children", []).append(new_group)
+                current = new_group
+        return current
+
+    def _import_csv(self):
+        if not self.data:
+            return
+        pwd = self._ask_password("Confirma la contrasenya mestra")
+        if not pwd or pwd != self.master_password:
+            messagebox.showerror("Error", "Contrasenya incorrecta.", parent=self.root)
+            return
+        path = filedialog.askopenfilename(title="Importar des de CSV",
+            filetypes=[("CSV", "*.csv"), ("Tots", "*.*")])
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8-sig") as f:
+                rows = list(csv.DictReader(f))
+        except Exception as e:
+            messagebox.showerror("Error", f"No s'ha pogut llegir el fitxer:\n{e}", parent=self.root)
+            return
+        if not rows:
+            messagebox.showwarning("Avís", "El fitxer CSV és buit o no té capçalera.", parent=self.root)
+            return
+        # Detecta les columnes per nom (suporta català i anglès)
+        col = {}
+        for key in rows[0].keys():
+            k = key.lower().strip()
+            if k in ("grup", "group", "folder", "carpeta"):         col["group"]    = key
+            elif k in ("títol", "titol", "title", "name", "nom"):   col["title"]    = key
+            elif k in ("usuari", "username", "user", "login"):       col["username"] = key
+            elif k in ("contrasenya", "password", "pass"):           col["password"] = key
+            elif k in ("url", "website", "web"):                     col["url"]      = key
+            elif k in ("notes", "nota", "note", "comentari"):        col["notes"]    = key
+        if "title" not in col:
+            messagebox.showerror("Error",
+                "No s'ha trobat la columna de títol al CSV.\n"
+                "La capçalera ha de contenir: Títol, Title o Name.", parent=self.root)
+            return
+        now = datetime.now().isoformat()
+        imported = skipped = 0
+        for row in rows:
+            title = row.get(col["title"], "").strip()
+            if not title:
+                skipped += 1
+                continue
+            group = self._find_or_create_group_path(row.get(col.get("group", ""), ""))
+            group["entries"].append({
+                "title":    title,
+                "username": row.get(col.get("username", ""), "").strip(),
+                "password": row.get(col.get("password", ""), ""),
+                "url":      row.get(col.get("url", ""), "").strip(),
+                "notes":    row.get(col.get("notes", ""), "").strip(),
+                "created":  now, "modified": now,
+            })
+            imported += 1
+        if imported == 0:
+            messagebox.showwarning("Res importat", "No s'ha trobat cap entrada vàlida al fitxer.", parent=self.root)
+            return
+        self.unsaved_changes = True
+        self._refresh_tree(); self._refresh_entries(); self._update_title()
+        msg = f"S'han importat {imported} entrades."
+        if skipped:
+            msg += f"\n({skipped} files ignorades per manca de títol)"
+        messagebox.showinfo("Importació completada", msg, parent=self.root)
 
 
 def _create_key_icon():

@@ -12,3 +12,14 @@ build/
 * copy *.*
 .gitignore
 *.spec
+coses-per-fer.txt
+*.csv
+*/*.csv
+.claude
+docs/*.*
+docs/
+*.bak
+*.tmp
+*.swp
+*.swo
+*.swn
