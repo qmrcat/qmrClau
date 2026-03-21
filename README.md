@@ -1,7 +1,10 @@
 # 🔑 qmrClau — Gestor de Contrasenyes Portable
 
-Gestor de contrasenyes local, xifrat i **portable** per a Windows 10/11 i Linux.
-Inspirat en KeePass, sense cap dependència externa.
+**qmrClau** és un gestor de contrasenyes local, xifrat i portable per a Windows 10/11 i Linux, inspirat en KeePass. Totes les dades es guarden en un únic fitxer `.vkdb` xifrat amb AES-256 que només tu pots obrir amb la teva contrasenya mestra.
+
+L'aplicació no requereix instal·lació ni connexió a Internet per funcionar: és un executable únic que pots portar en un USB. Opcionalment, pots emmagatzemar la base de dades en un servidor FTP per accedir-hi des de qualsevol lloc.
+
+> **Zero dependències externes** · **AES-256-CBC** · **PBKDF2-SHA256** · **Python pur**
 
 ---
 
