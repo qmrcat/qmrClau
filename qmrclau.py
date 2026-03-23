@@ -37,7 +37,7 @@ from datetime import datetime
 CONFIG_FILENAME = "qmrclau.json"
 ITERATIONS  = 200_000
 DB_VERSION  = 3
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 GITHUB_REPO = "qmrcat/qmrClau"
 
 _SBOX = [
@@ -440,6 +440,55 @@ class QmrClauApp:
         self._setup_styles()
         self._show_welcome()
 
+    # ---- Quant a ----
+
+    def _show_about(self):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Quant a qmrClau")
+        dialog.configure(bg=COLORS["bg"])
+        dialog.resizable(False, False)
+        dialog.transient(self.root); dialog.grab_set()
+        self._center_dialog(dialog, 420, 460)
+
+        # Icona i nom
+        tk.Label(dialog, text="🔑", font=("Segoe UI", 40), bg=COLORS["bg"]).pack(pady=(24, 4))
+        tk.Label(dialog, text="qmrClau", font=("Segoe UI", 20, "bold"),
+                 fg=COLORS["accent_light"], bg=COLORS["bg"]).pack()
+        tk.Label(dialog, text="Gestor de Contrasenyes Portable",
+                 font=("Segoe UI", 10), fg=COLORS["text_dim"], bg=COLORS["bg"]).pack(pady=(2, 16))
+
+        # Separador
+        tk.Frame(dialog, bg=COLORS["border"], height=1).pack(fill="x", padx=30)
+
+        # Informació
+        info_frame = tk.Frame(dialog, bg=COLORS["bg"])
+        info_frame.pack(pady=14)
+        rows = [
+            ("Versió",   f"v{APP_VERSION}"),
+            ("Xifrat",   "AES-256-CBC · PBKDF2-SHA256 · 200k iter."),
+            ("Plataforma","Windows / Linux · Python + Tkinter"),
+            ("Llicència", "Ús lliure"),
+        ]
+        for label, value in rows:
+            row = tk.Frame(info_frame, bg=COLORS["bg"]); row.pack(fill="x", pady=2)
+            tk.Label(row, text=f"{label}:", font=("Segoe UI", 9), fg=COLORS["text_dim"],
+                     bg=COLORS["bg"], width=12, anchor="e").pack(side="left", padx=(0, 8))
+            tk.Label(row, text=value, font=("Segoe UI", 9, "bold"),
+                     fg=COLORS["text"], bg=COLORS["bg"], anchor="w").pack(side="left")
+
+        # Separador
+        tk.Frame(dialog, bg=COLORS["border"], height=1).pack(fill="x", padx=30)
+
+        # URL GitHub clicable
+        gh_url = f"https://github.com/{GITHUB_REPO}"
+        lnk = tk.Label(dialog, text=gh_url, font=("Segoe UI", 9, "underline"),
+                        fg=COLORS["accent"], bg=COLORS["bg"], cursor="hand2")
+        lnk.pack(pady=(10, 4))
+        lnk.bind("<Button-1>", lambda e: webbrowser.open(gh_url))
+
+        self._make_button(dialog, "Tancar", dialog.destroy,
+                          COLORS["bg_entry"], width=10).pack(pady=(8, 20))
+
     # ---- Control de versions ----
 
     @staticmethod
@@ -642,7 +691,8 @@ class QmrClauApp:
         dialog.title(title)
         dialog.configure(bg=COLORS["bg"]); dialog.resizable(False, False)
         dialog.transient(self.root); dialog.grab_set()
-        self._center_dialog(dialog, 400, 240 if confirm else 180)
+        # self._center_dialog(dialog, 400, 260 if confirm else 180)
+        self._center_dialog(dialog, 400, 260 if confirm else 210)
         result = {"pwd": None}
         tk.Label(dialog, text=title, font=("Segoe UI", 13, "bold"),
                 fg=COLORS["accent_light"], bg=COLORS["bg"]).pack(pady=(18, 12))
@@ -735,6 +785,8 @@ class QmrClauApp:
         btn_exp.pack(side="right", padx=2, pady=6); self._tip(btn_exp, "Exportar totes les entrades a CSV (text pla)")
         btn_imp = self._make_small_button(tb_right, "📥 Importar", self._import_csv, COLORS["bg_entry"])
         btn_imp.pack(side="right", padx=2, pady=6); self._tip(btn_imp, "Importar entrades des d'un fitxer CSV")
+        btn_about = self._make_small_button(tb_right, "ℹ", self._show_about, COLORS["bg_entry"])
+        btn_about.pack(side="right", padx=2, pady=6); self._tip(btn_about, "Quant a qmrClau")
 
         # Cerca global a la toolbar
         tb_center = tk.Frame(toolbar, bg=COLORS["bg_secondary"]); tb_center.pack(side="left", padx=(16, 8), fill="x", expand=True)
@@ -1229,6 +1281,12 @@ class QmrClauApp:
                     p = generate_password(20); _e.delete(0, "end"); _e.insert(0, p); update_strength()
                 btn_dice = self._make_small_button(frame, "🎲", gen_pwd, COLORS["accent"])
                 btn_dice.pack(side="left", padx=(4, 0)); self._tip(btn_dice, "Generar contrasenya aleatòria")
+                def use_generated(_e=e):
+                    def _cb(pwd):
+                        _e.delete(0, "end"); _e.insert(0, pwd); update_strength()
+                    self._show_password_generator(on_select=_cb)
+                btn_gen_full = self._make_small_button(frame, "⚡", use_generated, COLORS["bg_entry"])
+                btn_gen_full.pack(side="left", padx=(4, 0)); self._tip(btn_gen_full, "Obrir el generador de contrasenyes")
                 sf = tk.Frame(dialog, bg=COLORS["bg"]); sf.pack(fill="x", padx=24, pady=(4, 0))
                 sc = tk.Canvas(sf, height=6, bg=COLORS["bg_entry"], highlightthickness=0); sc.pack(fill="x")
                 sl = tk.Label(sf, text="", font=("Segoe UI", 9), fg=COLORS["text_dim"], bg=COLORS["bg"]); sl.pack(anchor="w")
@@ -1266,11 +1324,11 @@ class QmrClauApp:
         self._make_button(bf, "Cancel·lar", dialog.destroy, COLORS["bg_entry"], width=12).pack(side="left")
 
     # ---- Generador ----
-    def _show_password_generator(self):
+    def _show_password_generator(self, on_select=None):
         dialog = tk.Toplevel(self.root); dialog.title("Generador de Contrasenyes")
         dialog.configure(bg=COLORS["bg"])
         dialog.resizable(False, False); dialog.transient(self.root); dialog.grab_set()
-        self._center_dialog(dialog, 440, 380)
+        self._center_dialog(dialog, 440, 380 if on_select is None else 410)
         tk.Label(dialog, text="⚡ Generador", font=("Segoe UI", 16, "bold"),
                     fg=COLORS["accent_light"], bg=COLORS["bg"]).pack(pady=(16, 12))
         lf = tk.Frame(dialog, bg=COLORS["bg"]); lf.pack(fill="x", padx=24)
@@ -1310,7 +1368,12 @@ class QmrClauApp:
             if p: self.root.clipboard_clear(); self.root.clipboard_append(p); messagebox.showinfo("Copiat", "Contrasenya copiada!", parent=dialog)
         bf = tk.Frame(dialog, bg=COLORS["bg"]); bf.pack(fill="x", padx=24, pady=(16, 0))
         self._make_button(bf, "🎲  Generar", do_gen, COLORS["accent"], width=12).pack(side="left", padx=(0, 8))
-        self._make_button(bf, "📋  Copiar", do_copy, COLORS["bg_entry"], width=12).pack(side="left")
+        self._make_button(bf, "📋  Copiar", do_copy, COLORS["bg_entry"], width=12).pack(side="left", padx=(0, 8))
+        if on_select is not None:
+            def do_use():
+                p = pwd_out.get()
+                if p: on_select(p); dialog.destroy()
+            self._make_button(bf, "✅  Usar", do_use, COLORS["success"], width=12).pack(side="left")
         do_gen()
 
     # ---- Tancar / Canviar Contrasenya ----
@@ -1388,7 +1451,7 @@ class QmrClauApp:
         dialog.configure(bg=COLORS["bg"])
         dialog.resizable(False, False)
         dialog.transient(self.root); dialog.grab_set()
-        self._center_dialog(dialog, 420, 430)
+        self._center_dialog(dialog, 420, 450)
         result = {"cfg": None}
 
         tk.Label(dialog, text="🌐  Connexió FTP", font=("Segoe UI", 13, "bold"),
@@ -1678,7 +1741,8 @@ class QmrClauApp:
         dialog.title("Google Drive")
         dialog.configure(bg=COLORS["bg"]); dialog.resizable(False, False)
         dialog.transient(self.root); dialog.grab_set()
-        self._center_dialog(dialog, 440, 310)
+        # self._center_dialog(dialog, 440, 310)
+        self._center_dialog(dialog, 440, 350)
         result = {"cfg": None}
 
         tk.Label(dialog, text="☁️  Google Drive", font=("Segoe UI", 13, "bold"),

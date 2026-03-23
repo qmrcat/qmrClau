@@ -1,6 +1,7 @@
 .env
 node_modules/
 *.zip
+*.vkdb
 dist/*.vkdb
 dist/*.json
 dist-versio-ant/
@@ -24,3 +25,4 @@ docs/
 *.swp
 *.swo
 *.swn
+qmrclau.json

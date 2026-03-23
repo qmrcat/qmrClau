@@ -2,7 +2,7 @@
 
 **qmrClau** és un gestor de contrasenyes local, xifrat i portable per a Windows 10/11 i Linux, inspirat en KeePass. Totes les dades es guarden en un únic fitxer `.vkdb` xifrat amb AES-256 que només tu pots obrir amb la teva contrasenya mestra.
 
-L'aplicació no requereix instal·lació ni connexió a Internet per funcionar: és un executable únic que pots portar en un USB. Opcionalment, pots emmagatzemar la base de dades en un servidor FTP per accedir-hi des de qualsevol lloc.
+L'aplicació no requereix instal·lació ni connexió a Internet per funcionar: és un executable únic que pots portar en un USB. Opcionalment, pots emmagatzemar la base de dades en un servidor FTP o al teu Google Drive per accedir-hi des de qualsevol lloc.
 
 > **Zero dependències externes** · **AES-256-CBC** · **PBKDF2-SHA256** · **Python pur**
 
@@ -48,6 +48,22 @@ L'aplicació no requereix instal·lació ni connexió a Internet per funcionar: 
 - Recorda la darrera configuració de connexió (servidor, port, usuari, ruta)
 - En tancar, elimina el fitxer temporal local per no deixar dades al disc
 
+### Accés remot via Google Drive
+- **Obrir i desar la base de dades al teu Google Drive** amb autenticació OAuth 2.0
+- Flux PKCE completament en Python pur — **sense dependències externes**
+- El token es renova automàticament: **no cal tornar a autoritzar** en sessions posteriors
+- Scope restringit (`drive.file`): qmrClau **només accedeix al fitxer que ella mateixa ha creat**
+- Si el fitxer no existeix a Drive, **el crea automàticament**
+- En cada desada, el fitxer xifrat es **puja automàticament a Drive**
+- En tancar, elimina el fitxer temporal local per no deixar dades al disc
+
+### Generador de Contrasenyes
+- **Generador independent** accessible des de la barra d'eines (botó ⚡ Generador)
+- **Generació ràpida** amb el botó 🎲 dins del formulari d'entrada
+- **Botó ⚡ al camp de contrasenya** per obrir el generador complet i inserir directament el resultat
+- Configurable: longitud, majúscules, minúscules, dígits i símbols
+- Indicador de fortalesa en temps real
+
 ### Interfície
 - **Tema fosc** modern
 - **Finestres de diàleg centrades** respecte a la finestra principal
@@ -61,11 +77,13 @@ L'aplicació no requereix instal·lació ni connexió a Internet per funcionar: 
 - **Multiplataforma** — Windows 10/11 i Linux
 - **Reanomenar grups** amb doble-clic, botó ✏️, o clic dret
 - **Pregunta en tancar** si hi ha canvis pendents sense desar
+- **Avís de nova versió** — comprova automàticament si hi ha actualitzacions disponibles a GitHub
+- **Diàleg "Quant a"** amb versió, informació de xifratge i enllaç al repositori
 
 ### Configuració
 - **Fitxer de configuració** (`qmrclau.json`) — es crea automàticament al costat de l'executable
 - **Obrir darrera base de dades** — a la pantalla d'inici apareix un botó per obrir directament la darrera BD utilitzada
-- Recorda la darrera configuració FTP utilitzada
+- Recorda la darrera configuració FTP i les credencials de Google Drive
 
 ---
 
@@ -112,8 +130,9 @@ L'executable generat a Ubuntu funciona a Ubuntu i derivats (Mint, Pop!_OS...). P
 2. **Crear Base de Dades**: Tria on desar el fitxer `.vkdb` i crea una contrasenya mestra
 3. **Obrir Base de Dades**: Selecciona un fitxer `.vkdb` existent
 4. **Obrir des de FTP**: Introdueix les dades del servidor FTP i la ruta del fitxer
-5. Gestiona les teves entrades organitzades per grups i subgrups
-6. Usa el botó 📋 per copiar contrasenyes al portapapers
+5. **Obrir des de Google Drive**: Introdueix el Client ID i Secret de Google i autoritza l'accés
+6. Gestiona les teves entrades organitzades per grups i subgrups
+7. Usa el botó 📋 per copiar contrasenyes al portapapers
 
 ### Accions ràpides
 
@@ -126,12 +145,13 @@ L'executable generat a Ubuntu funciona a Ubuntu i derivats (Mint, Pop!_OS...). P
 | Reanomenar grup | Doble-clic, botó ✏️ o clic dret |
 | Afegir subgrup | Botó `+ Subgrup` al panell lateral o clic dret |
 | Moure grup | Clic dret → Moure a... |
-| Generar contrasenya | Botó 🎲 al formulari d'entrada |
-| Generador independent | Botó ⚡ Generador a la barra d'eines |
+| Generar contrasenya ràpida | Botó 🎲 al formulari d'entrada |
+| Obrir generador complet | Botó ⚡ al camp de contrasenya o ⚡ Generador a la barra |
 | Cerca global | Camp 🔍 a la barra d'eines (prémer Enter) |
 | Tancar cerca | Tecla Escape o botó ✕ |
 | Exportar a CSV | Botó 📤 Exportar a la barra d'eines |
 | Importar des de CSV | Botó 📥 Importar a la barra d'eines |
+| Informació de l'aplicació | Botó ℹ a la barra d'eines |
 
 ---
 
@@ -217,6 +237,93 @@ Per compartir la base de dades entre dispositius:
 
 ---
 
+## Accés remot via Google Drive
+
+qmrClau pot desar la base de dades directament al teu Google Drive sense necessitat de cap biblioteca externa. La connexió usa OAuth 2.0 PKCE, el mateix estàndard de seguretat que les aplicacions oficials de Google.
+
+### Configuració inicial (una sola vegada)
+
+Cal crear unes credencials gratuïtes a Google Cloud Console. El procés dura uns 5 minuts:
+
+#### Pas 1 — Crear un projecte a Google Cloud Console
+
+1. Ves a [console.cloud.google.com](https://console.cloud.google.com)
+2. Inicia sessió amb el compte de Google que vols usar
+3. A la barra superior, clica el selector de projectes → **"Projecte nou"**
+4. Dona-li un nom (p. ex. `qmrClau`) i clica **"Crear"**
+
+#### Pas 2 — Activar la Google Drive API
+
+1. Al menú lateral, ves a **"API i serveis" → "Biblioteca"**
+2. Cerca `Google Drive API` i clica **"Habilitar"**
+
+#### Pas 3 — Crear les credencials OAuth 2.0
+
+1. Al menú lateral, ves a **"API i serveis" → "Credencials"**
+2. Clica **"+ Crear credencials" → "ID de client OAuth"**
+3. Si és la primera vegada, configura la **pantalla de consentiment**:
+   - Selecciona **"Extern"** → **"Crear"**
+   - Omple el **"Nom de l'aplicació"** (`qmrClau`) i el correu d'assistència
+   - Clica **"Desar i continuar"** fins al final → **"Tornar al tauler"**
+4. Torna a **"Credencials" → "+ Crear credencials" → "ID de client OAuth"**
+5. A **"Tipus d'aplicació"** selecciona **"Aplicació d'escriptori"**
+6. Dona-li un nom i clica **"Crear"**
+
+#### Pas 4 — Copiar el Client ID i Client Secret
+
+Apareixerà una finestra amb les credencials:
+
+```
+Client ID:      123456789-abc...apps.googleusercontent.com
+Client Secret:  GOCSPX-aBcDeFgH...
+```
+
+> ⚠️ No comparteixis mai el Client Secret. Tracta'l com una contrasenya.
+
+#### Pas 5 — Afegir el teu compte com a usuari de prova
+
+Com que l'aplicació no està verificada per Google, cal afegir el teu compte manualment:
+
+1. Al menú lateral, ves a **"API i serveis" → "Pantalla de consentiment d'OAuth"**
+2. Clica la pestanya **"Audience"**
+3. Desplaça't fins a la secció **"Test users"** i clica **"+ Add users"**
+4. Escriu el teu correu de Google i clica **"Save"**
+
+> Sense aquest pas, Google mostrarà un error *"Access blocked"* en intentar autoritzar.
+
+#### Pas 6 — Connectar qmrClau amb Drive
+
+1. Obre **qmrClau** i clica **"☁️ Obrir des de Google Drive"**
+2. Omple el formulari amb el **Client ID**, el **Client Secret** i el nom del fitxer (p.ex. `mydb.vkdb`)
+3. Clica **"Connectar"** — s'obrirà el navegador per autoritzar l'accés
+4. Si apareix l'avís *"Google no ha verificat aquesta aplicació"*, clica **"Avançat" → "Ves a qmrClau (no segur)"**
+5. Clica **"Permetre"** i torna a qmrClau
+6. Introdueix (o crea) la **contrasenya mestra** del fitxer
+
+A partir d'aquí treballes normalment. Cada cop que deses (💾), el fitxer s'actualitza automàticament a Drive.
+
+### Properes connexions
+
+Les credencials queden guardades. La propera vegada **no caldrà tornar a autoritzar** al navegador — el token es renova automàticament. Només hauràs d'introduir la contrasenya mestra.
+
+### Notes de seguretat de Drive
+
+- El fitxer `.vkdb` emmagatzemat a Drive **sempre està xifrat** (AES-256). Google no pot llegir les teves contrasenyes.
+- El scope d'autorització és `drive.file`: qmrClau **només pot accedir al fitxer que ella mateixa ha creat**, no a la resta del teu Drive.
+- Pots revocar l'accés en qualsevol moment des de **myaccount.google.com → Seguretat → Aplicacions de tercers**.
+
+### Resolució de problemes de Drive
+
+| Problema | Solució |
+|---|---|
+| *"Error d'autorització"* | Comprova que el Client ID i Secret són correctes |
+| *"Google no ha verificat..."* | Clica "Avançat" → "Ves a qmrClau (no segur)" |
+| *"Access blocked"* | Afegeix el teu compte com a usuari de prova (Pas 5) |
+| *"No s'ha pogut obtenir el token"* | Torna a clicar "Connectar" per reautoritzar |
+| *"No s'ha pogut pujar a Drive"* | Comprova la connexió a Internet |
+
+---
+
 ## Estructura del projecte
 
 ```
@@ -232,10 +339,8 @@ qmrclau/
 
 ## Limitacions i notes
 
-- La implementació d'AES és en Python pur: funcional i correcta, però més lenta que una
-  implementació en C. Per a bases de dades amb centenars d'entrades funciona bé; si notes
-  lentitud, pots instal·lar `pycryptodome` i adaptar el codi.
-- L'accés FTP és seqüencial: si dues persones desen alhora, l'última desada sobreescriu l'anterior. Es recomana un ús no simultani.
+- La implementació d'AES és en Python pur: funcional i correcta, però més lenta que una implementació en C. Per a bases de dades amb centenars d'entrades funciona bé; si notes lentitud, pots instal·lar `pycryptodome` i adaptar el codi.
+- L'accés FTP i Drive és seqüencial: si dues persones desen alhora, l'última desada sobreescriu l'anterior. Es recomana un ús no simultani.
 - Fes còpies de seguretat del teu fitxer `.vkdb`!
 
 ---
