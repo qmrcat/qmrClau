@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Rounded rectangle background -->
+  <rect width="512" height="512" rx="96" ry="96" fill="#7c6cf0"/>
+  <!-- Key ring (circle outline) -->
+  <circle cx="196" cy="220" r="90" fill="none" stroke="white" stroke-width="52"/>
+  <!-- Key shaft -->
+  <rect x="258" y="244" width="180" height="52" rx="26" fill="white"/>
+  <!-- Key teeth -->
+  <rect x="370" y="296" width="36" height="48" rx="8" fill="white"/>
+  <rect x="310" y="296" width="36" height="36" rx="8" fill="white"/>
+</svg>

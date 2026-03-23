@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>qmrClau</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#7c6cf0">
+  <link rel="icon" href="icon.svg">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+  <!-- ===== WELCOME SCREEN ===== -->
+  <div id="screen-welcome">
+    <div class="welcome-card">
+      <img src="icon.svg" alt="qmrClau" class="welcome-icon">
+      <h1 class="welcome-title">qmrClau</h1>
+      <p class="welcome-subtitle">Gestor de contrasenyes local, xifrat i portable.</p>
+      <div class="welcome-buttons">
+        <button id="btn-create" class="btn btn-primary">🆕 Crea nova base de dades</button>
+        <button id="btn-open"   class="btn btn-secondary">📂 Obre fitxer .vkdb</button>
+      </div>
+      <div class="welcome-security">
+        🔒 Totes les dades es xifren localment amb AES-256-CBC.<br>
+        Cap contrasenya s'envia mai a cap servidor.<br>
+        Compatible amb l'aplicació d'escriptori qmrClau.
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MAIN APP SCREEN ===== -->
+  <div id="screen-main" hidden>
+
+    <!-- Mobile sidebar overlay -->
+    <div id="sidebar-overlay" class="sidebar-overlay hidden"></div>
+
+    <div class="app-layout">
+
+      <!-- Sidebar -->
+      <aside id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+          <img src="icon.svg" alt="" class="sidebar-logo">
+          <span class="sidebar-title">qmrClau</span>
+        </div>
+        <div id="sidebar-filename" class="sidebar-filename"></div>
+        <div id="tree-container" class="sidebar-tree"></div>
+      </aside>
+
+      <!-- Main content area -->
+      <div class="main-content">
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <!-- Hamburger (mobile only) -->
+            <button id="btn-hamburger" class="btn-hamburger" title="Menú">☰</button>
+            <!-- Breadcrumb -->
+            <div id="breadcrumb" class="breadcrumb"></div>
+          </div>
+          <div class="toolbar-right">
+            <input
+              id="search-input"
+              class="search-input"
+              type="search"
+              placeholder="🔍 Cerca…"
+              aria-label="Cerca entrades"
+            >
+            <button id="btn-save" class="btn btn-icon" title="Desa (Ctrl+S)">
+              💾
+              <span class="unsaved-dot" aria-hidden="true"></span>
+            </button>
+            <button id="btn-generator" class="btn btn-icon" title="Generador de contrasenyes">⚡</button>
+            <button id="btn-export"    class="btn btn-icon" title="Exporta a CSV">📤</button>
+            <button id="btn-import"    class="btn btn-icon" title="Importa des de CSV">📥</button>
+            <button id="btn-lock"      class="btn btn-icon" title="Bloqueja i tanca">🔒</button>
+          </div>
+        </div>
+
+        <!-- Entries area -->
+        <div class="entries-container">
+          <div class="entries-header">
+            <div>
+              <span id="entries-header-title" class="entries-header-title">Selecciona un grup</span>
+              <span id="entries-count"        class="entries-count"></span>
+            </div>
+            <button id="btn-add-entry" class="btn btn-primary btn-sm" hidden>
+              + Afegeix entrada
+            </button>
+          </div>
+          <div id="entries-grid" class="entries-grid"></div>
+        </div>
+
+      </div><!-- .main-content -->
+    </div><!-- .app-layout -->
+  </div><!-- #screen-main -->
+
+  <!-- Modal overlay -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div id="modal-box" class="modal-box"></div>
+  </div>
+
+  <!-- Toast notifications -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script type="module" src="js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js', { scope: './' })
+        .then(reg => console.log('SW registered', reg.scope))
+        .catch(err => console.warn('SW registration failed', err));
+    }
+  </script>
+</body>
+</html>

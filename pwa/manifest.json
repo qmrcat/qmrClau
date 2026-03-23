@@ -1,0 +1,17 @@
+{
+  "name": "qmrClau",
+  "short_name": "qmrClau",
+  "description": "Gestor de contrasenyes local, xifrat i portable",
+  "theme_color": "#7c6cf0",
+  "background_color": "#1e1e2e",
+  "display": "standalone",
+  "start_url": "./",
+  "scope": "./",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    }
+  ]
+}
