@@ -3,6 +3,7 @@ node_modules/
 *.zip
 dist/*.vkdb
 dist/*.json
+dist-versio-ant/
 build/
 .DS_Store
 .vscode/
