@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>qmrClau — Gestor de Contrasenyes Portable</title>
+  <meta name="description" content="Gestor de contrasenyes local, xifrat i portable per a Windows i Linux. AES-256-CBC, zero dependències, accés via FTP i Google Drive." />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #1e1e2e;
+      --bg2:          #252535;
+      --bg3:          #2a2a3e;
+      --accent:       #7c6cf0;
+      --accent-light: #a89df4;
+      --text:         #cdd6f4;
+      --text-dim:     #6c7086;
+      --success:      #4ecdc4;
+      --warning:      #ffe66d;
+      --danger:       #ff6b6b;
+      --border:       #363650;
+      --radius:       12px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    a { color: var(--accent-light); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Nav ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(30, 30, 46, 0.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 56px;
+    }
+    .nav-brand {
+      display: flex; align-items: center; gap: 10px;
+      font-weight: 700; font-size: 1.1rem; color: var(--text);
+    }
+    .nav-links { display: flex; gap: 1.5rem; font-size: 0.9rem; }
+    .nav-links a { color: var(--text-dim); transition: color .2s; }
+    .nav-links a:hover { color: var(--text); text-decoration: none; }
+
+    /* ── Layout ── */
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 1.5rem; }
+
+    /* ── Hero ── */
+    .hero {
+      text-align: center;
+      padding: 6rem 1.5rem 4rem;
+      background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(124,108,240,.18) 0%, transparent 70%);
+    }
+    .hero-icon {
+      width: 80px; height: 80px;
+      background: var(--bg3);
+      border: 2px solid var(--border);
+      border-radius: 22px;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 2.5rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 0 40px rgba(124,108,240,.25);
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3.2rem);
+      font-weight: 800;
+      color: var(--accent-light);
+      letter-spacing: -0.02em;
+      margin-bottom: .5rem;
+    }
+    .hero .tagline {
+      font-size: 1.15rem;
+      color: var(--text-dim);
+      max-width: 600px;
+      margin: 0 auto 2rem;
+    }
+    .badge-row {
+      display: flex; flex-wrap: wrap; gap: .5rem;
+      justify-content: center; margin-bottom: 2.5rem;
+    }
+    .badge {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: .25rem .85rem;
+      font-size: .8rem;
+      color: var(--text-dim);
+    }
+    .badge.green { border-color: var(--success); color: var(--success); }
+    .badge.purple { border-color: var(--accent); color: var(--accent-light); }
+    .badge.yellow { border-color: var(--warning); color: var(--warning); }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: .5rem;
+      padding: .75rem 1.75rem;
+      border-radius: var(--radius);
+      font-size: 1rem; font-weight: 600;
+      cursor: pointer; border: none;
+      transition: filter .2s, transform .15s;
+      text-decoration: none;
+    }
+    .btn:hover { filter: brightness(1.12); transform: translateY(-1px); text-decoration: none; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-secondary { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
+    .btn-row { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+
+    /* ── Section ── */
+    section { padding: 5rem 0; }
+    section + section { border-top: 1px solid var(--border); }
+    .section-label {
+      font-size: .75rem; font-weight: 700; letter-spacing: .12em;
+      text-transform: uppercase; color: var(--accent);
+      margin-bottom: .5rem;
+    }
+    .section-title {
+      font-size: clamp(1.5rem, 3vw, 2.2rem);
+      font-weight: 800; color: var(--text);
+      margin-bottom: .75rem; letter-spacing: -.02em;
+    }
+    .section-sub {
+      color: var(--text-dim); max-width: 560px; font-size: 1rem;
+    }
+
+    /* ── Feature grid ── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1.25rem;
+      margin-top: 3rem;
+    }
+    .feature-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      transition: border-color .2s, transform .2s;
+    }
+    .feature-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+    .feature-icon {
+      font-size: 1.8rem; margin-bottom: .75rem; display: block;
+    }
+    .feature-card h3 {
+      font-size: 1rem; font-weight: 700; color: var(--text);
+      margin-bottom: .4rem;
+    }
+    .feature-card p {
+      font-size: .875rem; color: var(--text-dim); line-height: 1.55;
+    }
+
+    /* ── Security table ── */
+    .sec-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 1rem;
+      margin-top: 2.5rem;
+    }
+    .sec-item {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+    }
+    .sec-item .label {
+      font-size: .7rem; font-weight: 700; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--text-dim);
+      margin-bottom: .3rem;
+    }
+    .sec-item .value {
+      font-size: .95rem; font-weight: 600;
+      color: var(--success);
+      font-family: "Consolas", "Courier New", monospace;
+    }
+
+    /* ── File format ── */
+    .code-block {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.5rem;
+      font-family: "Consolas", "Courier New", monospace;
+      font-size: .85rem;
+      color: var(--accent-light);
+      overflow-x: auto;
+      margin-top: 1.5rem;
+      line-height: 1.8;
+    }
+    .code-block .dim { color: var(--text-dim); }
+
+    /* ── Storage cards ── */
+    .storage-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 1.5rem;
+      margin-top: 2.5rem;
+    }
+    .storage-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.75rem;
+    }
+    .storage-card h3 {
+      font-size: 1.1rem; font-weight: 700; color: var(--text);
+      margin-bottom: 1rem;
+      display: flex; align-items: center; gap: .5rem;
+    }
+    .storage-card ul {
+      list-style: none; display: flex; flex-direction: column; gap: .5rem;
+    }
+    .storage-card li {
+      font-size: .875rem; color: var(--text-dim);
+      display: flex; align-items: flex-start; gap: .5rem;
+    }
+    .storage-card li::before {
+      content: "✓"; color: var(--success); font-weight: 700;
+      flex-shrink: 0; margin-top: .05rem;
+    }
+
+    /* ── Quick actions table ── */
+    .actions-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 2rem;
+      font-size: .9rem;
+    }
+    .actions-table th {
+      text-align: left; padding: .6rem 1rem;
+      background: var(--bg3);
+      color: var(--text-dim); font-size: .75rem;
+      text-transform: uppercase; letter-spacing: .08em;
+      border-bottom: 1px solid var(--border);
+    }
+    .actions-table th:first-child { border-radius: var(--radius) 0 0 0; }
+    .actions-table th:last-child  { border-radius: 0 var(--radius) 0 0; }
+    .actions-table td {
+      padding: .65rem 1rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+    .actions-table tr:last-child td { border-bottom: none; }
+    .actions-table tr:hover td { background: var(--bg3); }
+    .kbd {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 4px; padding: .1rem .45rem;
+      font-family: "Consolas", monospace; font-size: .8rem;
+      color: var(--accent-light);
+    }
+
+    /* ── Download ── */
+    .download-section {
+      text-align: center;
+      background: radial-gradient(ellipse 70% 80% at 50% 100%, rgba(124,108,240,.12) 0%, transparent 70%);
+    }
+    .download-cards {
+      display: flex; flex-wrap: wrap; gap: 1.5rem;
+      justify-content: center; margin-top: 2.5rem;
+    }
+    .dl-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.75rem 2.5rem;
+      min-width: 220px;
+      transition: border-color .2s;
+    }
+    .dl-card:hover { border-color: var(--accent); }
+    .dl-card .os { font-size: 2rem; margin-bottom: .5rem; }
+    .dl-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: .25rem; }
+    .dl-card p  { font-size: .8rem; color: var(--text-dim); margin-bottom: 1.25rem; }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem 1.5rem;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: .85rem;
+    }
+    footer a { color: var(--text-dim); }
+    footer a:hover { color: var(--text); }
+
+    @media (max-width: 600px) {
+      nav { padding: 0 1rem; }
+      .nav-links { display: none; }
+      .hero { padding: 4rem 1rem 3rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Nav ── -->
+<nav>
+  <div class="nav-brand">
+    <span>🔑</span> qmrClau
+  </div>
+  <div class="nav-links">
+    <a href="#caracteristiques">Característiques</a>
+    <a href="#seguretat">Seguretat</a>
+    <a href="#emmagatzematge">Emmagatzematge</a>
+    <a href="#descarrega">Descàrrega</a>
+    <a href="https://github.com/qmrcat/qmrClau" target="_blank">GitHub ↗</a>
+  </div>
+</nav>
+
+<!-- ── Hero ── -->
+<header class="hero">
+  <div class="hero-icon">🔑</div>
+  <h1>qmrClau</h1>
+  <p class="tagline">
+    Gestor de contrasenyes local, xifrat i portable per a Windows i Linux.
+    Sense instal·lació, sense núvol obligatori, sense dependències externes.
+  </p>
+  <div class="badge-row">
+    <span class="badge green">AES-256-CBC</span>
+    <span class="badge green">PBKDF2-SHA256</span>
+    <span class="badge green">HMAC-SHA256</span>
+    <span class="badge purple">Python pur</span>
+    <span class="badge purple">Zero dependències</span>
+    <span class="badge yellow">Windows · Linux</span>
+  </div>
+  <div class="btn-row">
+    <a href="https://github.com/qmrcat/qmrClau/releases/latest" class="btn btn-primary" target="_blank">
+      ⬇ Descarregar
+    </a>
+    <a href="https://github.com/qmrcat/qmrClau" class="btn btn-secondary" target="_blank">
+      🔍 Veure codi font
+    </a>
+  </div>
+</header>
+
+<!-- ── Característiques ── -->
+<section id="caracteristiques">
+  <div class="container">
+    <div class="section-label">Funcionalitats</div>
+    <h2 class="section-title">Tot el que necessites, res que no necessites</h2>
+    <p class="section-sub">Un sol executable portable. Porta'l en un USB o desa la BD al núvol.</p>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <span class="feature-icon">🌲</span>
+        <h3>Grups i subgrups jeràrquics</h3>
+        <p>Organitza les entrades en un arbre il·limitat de grups, com KeePass. Mou grups i entrades amb un clic.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🔍</span>
+        <h3>Cerca global</h3>
+        <p>Cerca per títol, usuari, URL o notes a tota la base de dades. Navega directament al grup de l'entrada trobada.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">⚡</span>
+        <h3>Generador de contrasenyes</h3>
+        <p>Generador configurable (longitud, majúscules, dígits, símbols) amb indicador de fortalesa en temps real. Accessible des del formulari d'entrada.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">📋</span>
+        <h3>Portapapers segur</h3>
+        <p>Les contrasenyes copiades s'eliminen automàticament del portapapers als 15 segons.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">📤</span>
+        <h3>Exportació i importació CSV</h3>
+        <p>Compatible amb KeePass, Bitwarden i Excel. Detecta automàticament columnes en català i anglès. Requereix confirmació de contrasenya mestra.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🎨</span>
+        <h3>Interfície moderna</h3>
+        <p>Tema fosc, tooltips, doble-clic per editar, resum de notes a les targetes, finestres redimensionables i centrades.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🔔</span>
+        <h3>Actualitzacions automàtiques</h3>
+        <p>Comprova en segon pla si hi ha una versió nova a GitHub i mostra un banner discret per descarregar-la.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">💾</span>
+        <h3>Migració automàtica</h3>
+        <p>Els fitxers .vkdb antics (v2) es converteixen automàticament a l'estructura d'arbre (v3) en obrir-los.</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🖥️</span>
+        <h3>Executable portable</h3>
+        <p>Un sol fitxer, sense instal·lació. Compatible entre Windows 10/11 i Linux. Ideal per dur en un USB.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Seguretat ── -->
+<section id="seguretat">
+  <div class="container">
+    <div class="section-label">Seguretat</div>
+    <h2 class="section-title">Xifratge robust, implementat en Python pur</h2>
+    <p class="section-sub">Sense biblioteques de tercers. Tot el criptogràfic és codi obert que pots revisar.</p>
+
+    <div class="sec-grid">
+      <div class="sec-item">
+        <div class="label">Xifratge</div>
+        <div class="value">AES-256-CBC</div>
+      </div>
+      <div class="sec-item">
+        <div class="label">Derivació de clau</div>
+        <div class="value">PBKDF2-HMAC-SHA256<br><span style="font-size:.8rem;color:var(--text-dim)">200.000 iteracions</span></div>
+      </div>
+      <div class="sec-item">
+        <div class="label">Integritat</div>
+        <div class="value">HMAC-SHA256</div>
+      </div>
+      <div class="sec-item">
+        <div class="label">Generador aleatori</div>
+        <div class="value">secrets (CSPRNG del SO)</div>
+      </div>
+      <div class="sec-item">
+        <div class="label">Portapapers</div>
+        <div class="value">Auto-neteja 15 s</div>
+      </div>
+      <div class="sec-item">
+        <div class="label">Exportació</div>
+        <div class="value">Confirmació de<br>contrasenya mestra</div>
+      </div>
+    </div>
+
+    <div class="code-block">
+<span class="dim"># Format del fitxer .vkdb</span>
+[4 bytes]   Magic: "VKDB"
+[2 bytes]   Versió (big-endian) — actual: v3
+[32 bytes]  Salt (aleatori)
+[16 bytes]  IV (aleatori)
+[32 bytes]  HMAC-SHA256 (salt + iv + ciphertext)
+[N bytes]   Ciphertext (AES-256-CBC, PKCS7)
+    </div>
+  </div>
+</section>
+
+<!-- ── Emmagatzematge ── -->
+<section id="emmagatzematge">
+  <div class="container">
+    <div class="section-label">Accés remot</div>
+    <h2 class="section-title">La teva base de dades, on la necessitis</h2>
+    <p class="section-sub">El fitxer .vkdb sempre viatja xifrat. Ni el servidor ni Google poden llegir les teves contrasenyes.</p>
+
+    <div class="storage-grid">
+      <div class="storage-card">
+        <h3>🌐 Servidor FTP / FTPS</h3>
+        <ul>
+          <li>FTP estàndard i FTPS (TLS)</li>
+          <li>Crea el fitxer automàticament si no existeix</li>
+          <li>Puja el fitxer xifrat en cada desada</li>
+          <li>Recorda la darrera configuració de connexió</li>
+          <li>Elimina el fitxer temporal local en tancar</li>
+        </ul>
+      </div>
+      <div class="storage-card">
+        <h3>☁️ Google Drive</h3>
+        <ul>
+          <li>OAuth 2.0 PKCE en Python pur (sense deps)</li>
+          <li>Scope restringit <code style="font-size:.8rem;color:var(--accent-light)">drive.file</code>: només accedeix al fitxer creat per qmrClau</li>
+          <li>Token renovat automàticament</li>
+          <li>Crea el fitxer automàticament si no existeix</li>
+          <li>Puja el fitxer xifrat en cada desada</li>
+          <li>Elimina el fitxer temporal local en tancar</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Accions ràpides ── -->
+<section id="accions">
+  <div class="container">
+    <div class="section-label">Referència ràpida</div>
+    <h2 class="section-title">Accions ràpides</h2>
+
+    <table class="actions-table">
+      <thead>
+        <tr>
+          <th>Acció</th>
+          <th>Com fer-ho</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Editar una entrada</td><td>Doble-clic sobre la targeta</td></tr>
+        <tr><td>Copiar contrasenya</td><td>Botó <span class="kbd">📋</span> a la targeta</td></tr>
+        <tr><td>Moure entrada</td><td>Botó <span class="kbd">📦</span> a la targeta</td></tr>
+        <tr><td>Eliminar entrada</td><td>Botó <span class="kbd">🗑️</span> a la targeta</td></tr>
+        <tr><td>Reanomenar grup</td><td>Doble-clic, botó <span class="kbd">✏️</span> o clic dret</td></tr>
+        <tr><td>Afegir subgrup</td><td>Botó <span class="kbd">+ Subgrup</span> o clic dret</td></tr>
+        <tr><td>Generar contrasenya ràpida</td><td>Botó <span class="kbd">🎲</span> al formulari d'entrada</td></tr>
+        <tr><td>Obrir generador complet</td><td>Botó <span class="kbd">⚡</span> al camp de contrasenya</td></tr>
+        <tr><td>Cerca global</td><td>Camp <span class="kbd">🔍</span> a la barra → <span class="kbd">Enter</span></td></tr>
+        <tr><td>Tancar cerca</td><td><span class="kbd">Escape</span> o botó <span class="kbd">✕</span></td></tr>
+        <tr><td>Exportar a CSV</td><td>Botó <span class="kbd">📤 Exportar</span> a la barra d'eines</td></tr>
+        <tr><td>Importar des de CSV</td><td>Botó <span class="kbd">📥 Importar</span> a la barra d'eines</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ── Descàrrega ── -->
+<section id="descarrega" class="download-section">
+  <div class="container">
+    <div class="section-label">Descàrrega</div>
+    <h2 class="section-title">Comença a usar qmrClau</h2>
+    <p class="section-sub" style="margin:0 auto;">Un sol fitxer, sense instal·lació. Descàrrega i executa.</p>
+
+    <div class="download-cards">
+      <div class="dl-card">
+        <div class="os">🪟</div>
+        <h3>Windows 10 / 11</h3>
+        <p>Executable .exe portable</p>
+        <a href="https://github.com/qmrcat/qmrClau/releases/latest" class="btn btn-primary" target="_blank">
+          ⬇ Descarregar .exe
+        </a>
+      </div>
+      <div class="dl-card">
+        <div class="os">🐧</div>
+        <h3>Linux</h3>
+         <p>Properament</p>
+        <p>Ubuntu, Debian, Mint i derivats</p>
+        <a href="#" class="btn btn-primary" target="_blank">
+          <s>⬇ Descarregar binari</s>
+        </a>
+        <!-- <a href="https://github.com/qmrcat/qmrClau/releases/latest" class="btn btn-primary" target="_blank">
+          ⬇ Descarregar binari
+        </a> -->
+      </div>
+      <div class="dl-card">
+        <div class="os">🐍</div>
+        <h3>Codi font</h3>
+        <p>Python 3.8+ amb tkinter</p>
+       
+        <a href="https://github.com/qmrcat/qmrClau" class="btn btn-secondary" target="_blank">
+          🔍 Veure codi font a GitHub 
+        </a>
+      </div>
+    </div>
+
+    <p style="margin-top:2rem;font-size:.85rem;color:var(--text-dim)">
+      Per generar l'executable tu mateix: <code style="color:var(--accent-light)">pip install pyinstaller</code> i executa <code style="color:var(--accent-light)">generar_exe.bat</code> (Windows) o <code style="color:var(--accent-light)">generar_exe.sh</code> (Linux).
+    </p>
+  </div>
+</section>
+
+<!-- ── Footer ── -->
+<footer>
+  <p>
+    <strong style="color:var(--text)">qmrClau</strong> —
+    Ús lliure. Modifica'l com vulguis. ·
+    <a href="https://github.com/qmrcat/qmrClau" target="_blank">GitHub</a> ·
+    <a href="https://github.com/qmrcat/qmrClau/releases" target="_blank">Versions</a> ·
+    <a href="https://github.com/qmrcat/qmrClau/issues" target="_blank">Reportar un problema</a>
+  </p>
+</footer>
+
+</body>
+</html>
