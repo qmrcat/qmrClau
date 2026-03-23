@@ -81,13 +81,13 @@ document.addEventListener('DOMContentLoaded', () => {
 // ===== SCREENS =====
 
 function showWelcome() {
-  $('screen-welcome').hidden = false;
-  $('screen-main').hidden = true;
+  $('screen-welcome').style.display = 'flex';
+  $('screen-main').style.display = 'none';
 }
 
 function showMain() {
-  $('screen-welcome').hidden = true;
-  $('screen-main').hidden = false;
+  $('screen-welcome').style.display = 'none';
+  $('screen-main').style.display = 'flex';
   updateTitle();
   renderTree();
   renderCurrentView();
