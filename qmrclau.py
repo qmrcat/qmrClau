@@ -9,8 +9,15 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import csv
 import ftplib
+import http.server
 import json
+import socket
 import tempfile
+import threading
+import urllib.parse
+import urllib.request
+import urllib.error
+import webbrowser
 import os
 import sys
 import base64
@@ -44,6 +51,8 @@ def load_config() -> dict:
     defaults = {
         "last_db_path": "",
         "ftp_last": {},
+        "gdrive_credentials": {},
+        "gdrive_last_filename": "mydb.vkdb",
     }
     path = _get_config_path()
     if os.path.exists(path):
@@ -416,6 +425,8 @@ class QmrClauApp:
         self.master_password = None
         self.data = None
         self.ftp_config = None
+        self.gdrive_file_id = None
+        self.gdrive_filename = None
         self.current_group_id = None
         self.unsaved_changes = False
         self.clipboard_clear_id = None
@@ -452,6 +463,8 @@ class QmrClauApp:
         self._make_button(btn_frame, "🔓  Obrir Base de Dades", self._open_db,
                         COLORS["bg_entry"], width=28).pack(pady=5)
         self._make_button(btn_frame, "🌐  Obrir des de FTP", self._open_ftp_db,
+                        COLORS["bg_entry"], width=28).pack(pady=5)
+        self._make_button(btn_frame, "☁️  Obrir des de Google Drive", self._open_gdrive_db,
                         COLORS["bg_entry"], width=28).pack(pady=5)
 
         # Botó obrir darrera BD (només si existeix una ruta vàlida)
@@ -624,13 +637,23 @@ class QmrClauApp:
             except Exception as e:
                 messagebox.showwarning("Avís FTP",
                     f"Desat localment però no s'ha pogut pujar al FTP:\n{e}", parent=self.root)
+        if self.gdrive_file_id:
+            try:
+                token = self._gdrive_token()
+                if not token: raise Exception("No s'ha pogut obtenir el token d'accés")
+                self._gdrive_upload_update(token, self.gdrive_file_id, self.db_path)
+            except Exception as e:
+                messagebox.showwarning("Avís Drive",
+                    f"Desat localment però no s'ha pogut pujar a Drive:\n{e}", parent=self.root)
 
     # ---- Interfície Principal ----
     def _clear_root(self):
         for w in self.root.winfo_children(): w.destroy()
 
     def _update_title(self):
-        if self.ftp_config:
+        if self.gdrive_file_id:
+            name = f"☁️ Drive: {self.gdrive_filename}"
+        elif self.ftp_config:
             name = f"🌐 {self.ftp_config['host']}{self.ftp_config['path']}"
         elif self.db_path:
             name = os.path.basename(self.db_path)
@@ -1247,7 +1270,7 @@ class QmrClauApp:
                 return  # Cancel·lar: no tancar
             if r:
                 self._save_db()
-        if self.ftp_config and self.db_path and os.path.exists(self.db_path):
+        if (self.ftp_config or self.gdrive_file_id) and self.db_path and os.path.exists(self.db_path):
             try: os.unlink(self.db_path)
             except: pass
         self.root.destroy()
@@ -1257,11 +1280,11 @@ class QmrClauApp:
             r = messagebox.askyesnocancel("Canvis pendents", "Vols desar abans de tancar?", parent=self.root)
             if r is None: return
             if r: self._save_db()
-        if self.ftp_config and self.db_path and os.path.exists(self.db_path):
+        if (self.ftp_config or self.gdrive_file_id) and self.db_path and os.path.exists(self.db_path):
             try: os.unlink(self.db_path)
             except: pass
         self.master_password = None; self.data = None; self.db_path = None
-        self.ftp_config = None
+        self.ftp_config = None; self.gdrive_file_id = None; self.gdrive_filename = None
         self._show_welcome()
 
     def _change_master_password(self):
@@ -1426,6 +1449,304 @@ class QmrClauApp:
         self.db_path = tmp_path
         self.master_password = pwd
         self.ftp_config = cfg
+        root_node = self.data["root"]
+        self.current_group_id = (root_node["children"][0]["id"]
+                                 if root_node.get("children") else root_node["id"])
+        self._show_main()
+
+    # ---- Google Drive ----
+
+    def _gdrive_token(self):
+        """Retorna un access token vàlid, refrescant-lo si ha caducat."""
+        creds = self.config.get("gdrive_credentials", {})
+        if not creds.get("refresh_token"):
+            return None
+        if time.time() < creds.get("token_expiry", 0) - 60 and creds.get("access_token"):
+            return creds["access_token"]
+        data = urllib.parse.urlencode({
+            "client_id":     creds["client_id"],
+            "client_secret": creds["client_secret"],
+            "refresh_token": creds["refresh_token"],
+            "grant_type":    "refresh_token",
+        }).encode()
+        try:
+            req = urllib.request.Request("https://oauth2.googleapis.com/token",
+                                         data=data, method="POST")
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                tokens = json.loads(resp.read())
+            creds["access_token"]  = tokens["access_token"]
+            creds["token_expiry"]  = time.time() + tokens.get("expires_in", 3600)
+            self.config["gdrive_credentials"] = creds
+            save_config(self.config)
+            return creds["access_token"]
+        except Exception:
+            return None
+
+    def _gdrive_authorize(self, client_id, client_secret):
+        """OAuth 2.0 PKCE: obre el navegador, espera el callback i retorna els tokens."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("localhost", 0))
+            port = s.getsockname()[1]
+
+        verifier  = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
+        challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+        redirect_uri = f"http://localhost:{port}"
+
+        params = urllib.parse.urlencode({
+            "client_id":             client_id,
+            "redirect_uri":          redirect_uri,
+            "response_type":         "code",
+            "scope":                 "https://www.googleapis.com/auth/drive.file",
+            "code_challenge":        challenge,
+            "code_challenge_method": "S256",
+            "access_type":           "offline",
+            "prompt":                "consent",
+        })
+        auth_url = f"https://accounts.google.com/o/oauth2/auth?{params}"
+
+        holder = {"code": None, "done": threading.Event()}
+
+        class _Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self_h):
+                p = urllib.parse.parse_qs(urllib.parse.urlparse(self_h.path).query)
+                if "code" in p:
+                    holder["code"] = p["code"][0]
+                self_h.send_response(200)
+                self_h.send_header("Content-type", "text/html; charset=utf-8")
+                self_h.end_headers()
+                self_h.wfile.write(
+                    b"<html><body style='font-family:sans-serif;text-align:center;padding:40px'>"
+                    b"<h2>&#x2705; Autoritzat correctament!</h2>"
+                    b"<p>Pots tancar aquesta finestra i tornar a qmrClau.</p>"
+                    b"</body></html>")
+                holder["done"].set()
+            def log_message(self_h, *_): pass
+
+        srv = http.server.HTTPServer(("localhost", port), _Handler)
+        t = threading.Thread(target=srv.serve_forever); t.daemon = True; t.start()
+        webbrowser.open(auth_url)
+
+        # Diàleg d'espera (no bloqueja la UI)
+        wd = tk.Toplevel(self.root)
+        wd.title("Autoritzant amb Google")
+        wd.configure(bg=COLORS["bg"]); wd.resizable(False, False)
+        wd.transient(self.root); wd.grab_set()
+        self._center_dialog(wd, 400, 160)
+        tk.Label(wd, text="🌐  Esperant autorització...", font=("Segoe UI", 12, "bold"),
+                 fg=COLORS["accent_light"], bg=COLORS["bg"]).pack(pady=(30, 8))
+        tk.Label(wd, text="S'ha obert el navegador. Autoritza l'accés i torna aquí.",
+                 font=("Segoe UI", 9), fg=COLORS["text_dim"], bg=COLORS["bg"]).pack()
+
+        def _poll():
+            if holder["done"].is_set():
+                try: srv.shutdown()
+                except: pass
+                wd.destroy()
+            elif wd.winfo_exists():
+                wd.after(300, _poll)
+
+        wd.after(300, _poll)
+        wd.wait_window()
+
+        if not holder["code"]:
+            try: srv.shutdown()
+            except: pass
+            return None
+
+        data = urllib.parse.urlencode({
+            "client_id":     client_id,
+            "client_secret": client_secret,
+            "code":          holder["code"],
+            "code_verifier": verifier,
+            "grant_type":    "authorization_code",
+            "redirect_uri":  redirect_uri,
+        }).encode()
+        req = urllib.request.Request("https://oauth2.googleapis.com/token",
+                                     data=data, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return json.loads(resp.read())
+
+    def _gdrive_request(self, method, url, token, data=None, content_type=None):
+        headers = {"Authorization": f"Bearer {token}"}
+        if content_type:
+            headers["Content-Type"] = content_type
+        req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read()
+            return json.loads(body) if body else {}
+
+    def _gdrive_find_file(self, token, filename):
+        fn = filename.replace("'", "\\'")
+        q  = urllib.parse.quote(f"name='{fn}' and trashed=false")
+        result = self._gdrive_request("GET",
+            f"https://www.googleapis.com/drive/v3/files?q={q}&fields=files(id,name)", token)
+        files = result.get("files", [])
+        return files[0]["id"] if files else None
+
+    def _gdrive_download(self, token, file_id, local_path):
+        req = urllib.request.Request(
+            f"https://www.googleapis.com/drive/v3/files/{file_id}?alt=media",
+            headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            with open(local_path, "wb") as f:
+                f.write(resp.read())
+
+    def _gdrive_upload_new(self, token, filename, local_path):
+        with open(local_path, "rb") as f:
+            content = f.read()
+        boundary = "qmrclau_" + secrets.token_hex(8)
+        metadata = json.dumps({"name": filename}).encode()
+        body = (
+            f"--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"
+            .encode() + metadata +
+            f"\r\n--{boundary}\r\nContent-Type: application/octet-stream\r\n\r\n"
+            .encode() + content +
+            f"\r\n--{boundary}--".encode()
+        )
+        result = self._gdrive_request("POST",
+            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",
+            token, data=body,
+            content_type=f"multipart/related; boundary={boundary}")
+        return result["id"]
+
+    def _gdrive_upload_update(self, token, file_id, local_path):
+        with open(local_path, "rb") as f:
+            content = f.read()
+        self._gdrive_request("PATCH",
+            f"https://www.googleapis.com/upload/drive/v3/files/{file_id}?uploadType=media",
+            token, data=content, content_type="application/octet-stream")
+
+    def _gdrive_dialog(self):
+        creds     = self.config.get("gdrive_credentials", {})
+        last_file = self.config.get("gdrive_last_filename", "mydb.vkdb")
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Google Drive")
+        dialog.configure(bg=COLORS["bg"]); dialog.resizable(False, False)
+        dialog.transient(self.root); dialog.grab_set()
+        self._center_dialog(dialog, 440, 310)
+        result = {"cfg": None}
+
+        tk.Label(dialog, text="☁️  Google Drive", font=("Segoe UI", 13, "bold"),
+                 fg=COLORS["accent_light"], bg=COLORS["bg"]).pack(pady=(18, 2))
+        tk.Label(dialog,
+                 text="Credencials OAuth 2.0 (tipus Aplicació d'escriptori)\nconsole.cloud.google.com",
+                 font=("Segoe UI", 8), fg=COLORS["text_dim"], bg=COLORS["bg"],
+                 justify="center").pack()
+
+        ff = tk.Frame(dialog, bg=COLORS["bg"]); ff.pack(fill="x", padx=30, pady=(10, 0))
+        entries = {}
+        for label, key, default, secret in [
+            ("Client ID:",            "client_id",     creds.get("client_id", ""),     False),
+            ("Client Secret:",        "client_secret", creds.get("client_secret", ""), True),
+            ("Nom del fitxer a Drive:","filename",      last_file,                      False),
+        ]:
+            tk.Label(ff, text=label, font=("Segoe UI", 9), fg=COLORS["text_dim"],
+                     bg=COLORS["bg"], anchor="w").pack(fill="x", pady=(8, 0))
+            e = tk.Entry(ff, show="●" if secret else "", font=("Segoe UI", 10),
+                         bg=COLORS["bg_entry"], fg=COLORS["text"],
+                         insertbackground=COLORS["text"], relief="flat", bd=0)
+            e.pack(fill="x", ipady=5); e.insert(0, default)
+            entries[key] = e
+
+        def connect(event=None):
+            cid  = entries["client_id"].get().strip()
+            csec = entries["client_secret"].get().strip()
+            fn   = entries["filename"].get().strip()
+            if not cid or not csec or not fn:
+                messagebox.showwarning("Avís", "Omple tots els camps.", parent=dialog); return
+            result["cfg"] = {"client_id": cid, "client_secret": csec, "filename": fn}
+            dialog.destroy()
+
+        entries["client_id"].focus_set()
+        bf = tk.Frame(dialog, bg=COLORS["bg"]); bf.pack(pady=(14, 0))
+        self._make_button(bf, "Connectar", connect, COLORS["accent"], width=12).pack(side="left", padx=(0, 8))
+        self._make_button(bf, "Cancel·lar", dialog.destroy, COLORS["bg_entry"], width=12).pack(side="left")
+        dialog.wait_window()
+        return result["cfg"]
+
+    def _open_gdrive_db(self):
+        cfg = self._gdrive_dialog()
+        if not cfg: return
+
+        client_id, client_secret, filename = cfg["client_id"], cfg["client_secret"], cfg["filename"]
+        self.config["gdrive_last_filename"] = filename
+
+        # Autoritza si cal (credencials noves o canviades)
+        creds = self.config.get("gdrive_credentials", {})
+        need_auth = (not creds.get("refresh_token") or
+                     creds.get("client_id") != client_id or
+                     creds.get("client_secret") != client_secret)
+        if need_auth:
+            try:
+                tokens = self._gdrive_authorize(client_id, client_secret)
+            except Exception as e:
+                messagebox.showerror("Error Drive", f"Error d'autorització:\n{e}", parent=self.root); return
+            if not tokens:
+                messagebox.showwarning("Cancel·lat", "Autorització cancel·lada.", parent=self.root); return
+            self.config["gdrive_credentials"] = {
+                "client_id":     client_id,
+                "client_secret": client_secret,
+                "access_token":  tokens["access_token"],
+                "refresh_token": tokens.get("refresh_token", creds.get("refresh_token", "")),
+                "token_expiry":  time.time() + tokens.get("expires_in", 3600),
+            }
+            save_config(self.config)
+
+        token = self._gdrive_token()
+        if not token:
+            messagebox.showerror("Error", "No s'ha pogut obtenir el token d'accés.", parent=self.root); return
+
+        try:
+            file_id = self._gdrive_find_file(token, filename)
+        except Exception as e:
+            messagebox.showerror("Error Drive", f"Error cercant el fitxer:\n{e}", parent=self.root); return
+
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".vkdb")
+        os.close(tmp_fd)
+        create_new = False
+
+        if file_id:
+            try:
+                self._gdrive_download(token, file_id, tmp_path)
+            except Exception as e:
+                os.unlink(tmp_path)
+                messagebox.showerror("Error Drive", f"No s'ha pogut descarregar:\n{e}", parent=self.root); return
+        else:
+            if not messagebox.askyesno("Fitxer no trobat",
+                    f"El fitxer «{filename}» no existeix a Drive.\n\n"
+                    "Vols crear una nova base de dades?", parent=self.root):
+                os.unlink(tmp_path); return
+            create_new = True
+
+        pwd = self._ask_password("Crea la contrasenya mestra" if create_new
+                                 else "Introdueix la contrasenya mestra",
+                                 confirm=create_new)
+        if not pwd:
+            os.unlink(tmp_path); return
+
+        if create_new:
+            data = _new_db_data()
+            blob = encrypt_db(data, pwd)
+            with open(tmp_path, "wb") as f: f.write(blob)
+            try:
+                file_id = self._gdrive_upload_new(token, filename, tmp_path)
+            except Exception as e:
+                os.unlink(tmp_path)
+                messagebox.showerror("Error Drive", f"No s'ha pogut crear el fitxer:\n{e}", parent=self.root); return
+        else:
+            try:
+                with open(tmp_path, "rb") as f: blob = f.read()
+                data = decrypt_db(blob, pwd)
+                if "root" not in data: data = _migrate_v2_to_v3(data)
+            except ValueError as e:
+                os.unlink(tmp_path); messagebox.showerror("Error", str(e), parent=self.root); return
+            except Exception as e:
+                os.unlink(tmp_path)
+                messagebox.showerror("Error", f"No s'ha pogut obrir: {e}", parent=self.root); return
+
+        self.data = data; self.db_path = tmp_path; self.master_password = pwd
+        self.gdrive_file_id = file_id; self.gdrive_filename = filename; self.ftp_config = None
         root_node = self.data["root"]
         self.current_group_id = (root_node["children"][0]["id"]
                                  if root_node.get("children") else root_node["id"])
