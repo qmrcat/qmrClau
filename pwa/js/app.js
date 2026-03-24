@@ -989,34 +989,37 @@ function dlgPassword(title, description = '') {
         <div class="form-group">
           <label class="form-label">Contrasenya</label>
           <div class="pwd-wrap">
-            <input type="password" id="dlg-pwd" class="form-input" autocomplete="current-password" placeholder="Contrasenya…">
-            <button type="button" class="pwd-toggle" id="dlg-pwd-toggle">👁️ Mostra</button>
+            <input type="password" class="form-input" autocomplete="current-password" placeholder="Contrasenya…">
+            <button type="button" class="pwd-toggle">👁️ Mostra</button>
           </div>
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" id="dlg-cancel">Cancel·la</button>
-        <button class="btn btn-primary" id="dlg-ok">Accepta</button>
+        <button type="button" class="btn btn-secondary">Cancel·la</button>
+        <button type="button" class="btn btn-primary">Accepta</button>
       </div>`;
+
+    const pwdInput  = wrap.querySelector('input[type=password]');
+    const toggleBtn = wrap.querySelector('.pwd-toggle');
+    const cancelBtn = wrap.querySelector('.btn-secondary');
+    const okBtn     = wrap.querySelector('.btn-primary');
 
     let resolved = false;
     const done = val => { if (!resolved) { resolved = true; _hideModal(); resolve(val); } };
 
-    wrap.querySelector('#dlg-ok').addEventListener('click', () => done(wrap.querySelector('#dlg-pwd').value));
-    wrap.querySelector('#dlg-cancel').addEventListener('click', () => done(null));
-    wrap.querySelector('#dlg-pwd-toggle').addEventListener('click', () => {
-      const inp = wrap.querySelector('#dlg-pwd');
-      const btn = wrap.querySelector('#dlg-pwd-toggle');
-      if (inp.type === 'password') { inp.type = 'text'; btn.textContent = '🙈 Amaga'; }
-      else                         { inp.type = 'password'; btn.textContent = '👁️ Mostra'; }
+    okBtn.addEventListener('click', () => done(pwdInput.value));
+    cancelBtn.addEventListener('click', () => done(null));
+    toggleBtn.addEventListener('click', () => {
+      if (pwdInput.type === 'password') { pwdInput.type = 'text'; toggleBtn.textContent = '🙈 Amaga'; }
+      else { pwdInput.type = 'password'; toggleBtn.textContent = '👁️ Mostra'; }
     });
     wrap.addEventListener('keydown', e => {
       if (e.key === 'Escape') done(null);
-      if (e.key === 'Enter' && e.target.id === 'dlg-pwd') done(wrap.querySelector('#dlg-pwd').value);
+      if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') done(pwdInput.value);
     });
 
     _showModal(wrap);
-    requestAnimationFrame(() => wrap.querySelector('#dlg-pwd').focus());
+    requestAnimationFrame(() => pwdInput.focus());
   });
 }
 
