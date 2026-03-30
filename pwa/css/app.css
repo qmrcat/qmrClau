@@ -609,6 +609,17 @@ html, body {
   margin-top: 20px;
 }
 
+/* ===== FTP GRID ===== */
+.ftp-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 480px) {
+  .ftp-grid { grid-template-columns: 1fr; }
+  .ftp-grid .form-group[style*="grid-column"] { grid-column: 1 !important; }
+}
+
 /* ===== FORM FIELDS ===== */
 .form-group {
   display: flex;
@@ -691,6 +702,28 @@ html, body {
   transition: color 0.1s;
 }
 .pwd-wrap .pwd-gen-btn:hover { color: var(--accent); }
+
+/* URL field wrapper */
+.url-wrap {
+  display: flex;
+  gap: 6px;
+}
+.url-wrap .form-input {
+  flex: 1;
+  min-width: 0;
+}
+.url-open-btn {
+  flex-shrink: 0;
+  background: var(--bg-entry);
+  border: none;
+  border-radius: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 10px;
+  transition: color 0.1s;
+}
+.url-open-btn:hover { color: var(--accent); }
 
 /* Strength bar */
 .strength-bar-wrap {

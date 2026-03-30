@@ -11,6 +11,8 @@ import {
 
 // ===== APPLICATION STATE =====
 
+const FTP_PROXY = 'http://localhost:8766';
+
 const state = {
   data:           null,
   password:       null,
@@ -22,6 +24,7 @@ const state = {
   searchQuery:    '',
   clipboardTimer: null,
   clipboardTimerEnd: null,
+  ftpConfig:      null,   // { host, port, username, password, path, tls }
 };
 
 // ===== DOM REFS =====
@@ -36,6 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Welcome buttons
   $('btn-create').addEventListener('click', createNewDB);
   $('btn-open').addEventListener('click', openFile);
+  $('btn-ftp').addEventListener('click', openFTP);
 
   // Toolbar buttons
   $('btn-save').addEventListener('click', saveFile);
@@ -181,10 +185,21 @@ async function saveFile(silent = false) {
 
   try {
     const encrypted = await encryptDB(state.data, state.password);
+
+    // ── Desar via FTP ──────────────────────────────────────────────────
+    if (state.ftpConfig) {
+      if (!silent) showToast('Pujant al servidor FTP…', '');
+      await _ftpUpload(state.ftpConfig, encrypted);
+      state.unsaved = false;
+      updateTitle();
+      if (!silent) showToast('Desat al servidor FTP', 'success');
+      return;
+    }
+
+    // ── Desar via File System Access API ──────────────────────────────
     const blob = new Blob([encrypted], { type: 'application/octet-stream' });
 
     if (state.fileHandle && state.fileHandle.createWritable) {
-      // File System Access API
       try {
         const writable = await state.fileHandle.createWritable();
         await writable.write(blob);
@@ -193,8 +208,8 @@ async function saveFile(silent = false) {
         updateTitle();
         if (!silent) showToast('Desat correctament', 'success');
         return;
-      } catch (e) {
-        // permission might have been revoked, fall through
+      } catch {
+        // permís revocat, continuar amb fallback
       }
     }
 
@@ -218,11 +233,10 @@ async function saveFile(silent = false) {
         return;
       } catch (e) {
         if (e.name === 'AbortError') return;
-        // Fall through to download
       }
     }
 
-    // Fallback: download
+    // ── Fallback: descàrrega ──────────────────────────────────────────
     _downloadBlob(blob, state.fileName || 'database.vkdb');
     state.unsaved = false;
     updateTitle();
@@ -273,6 +287,7 @@ function _doLock() {
   state.currentGroupId = null;
   state.expandedGroups = new Set();
   state.searchQuery    = '';
+  state.ftpConfig      = null;
   if (state.clipboardTimer) { clearTimeout(state.clipboardTimer); state.clipboardTimer = null; }
   showWelcome();
 }
@@ -290,7 +305,10 @@ function updateTitle() {
   }
 
   const fn = $('sidebar-filename');
-  if (fn) fn.textContent = state.fileName || '';
+  if (fn) {
+    const prefix = state.ftpConfig ? `🌐 ${state.ftpConfig.host}` : '';
+    fn.textContent = prefix ? `${prefix}\n${state.fileName || ''}` : (state.fileName || '');
+  }
 }
 
 function markUnsaved() {
@@ -590,6 +608,7 @@ function _buildEntryCard(entry, groupId) {
     <div class="entry-actions">
       <button class="entry-btn btn-copy" title="Copia la contrasenya">📋 Copia</button>
       <button class="entry-btn btn-edit" title="Edita">✏️ Edita</button>
+      <button class="entry-btn btn-dup" title="Duplica">⧉ Duplica</button>
       <button class="entry-btn btn-move" title="Mou a un altre grup">📦 Mou</button>
       <button class="entry-btn btn-del danger" title="Esborra">🗑️ Esborra</button>
     </div>`;
@@ -605,6 +624,10 @@ function _buildEntryCard(entry, groupId) {
   card.querySelector('.btn-edit').addEventListener('click', e => {
     e.stopPropagation();
     editEntry(entry.id, groupId);
+  });
+  card.querySelector('.btn-dup').addEventListener('click', e => {
+    e.stopPropagation();
+    duplicateEntry(entry.id, groupId);
   });
   card.querySelector('.btn-move').addEventListener('click', e => {
     e.stopPropagation();
@@ -658,6 +681,20 @@ async function deleteEntry(entryId, groupId) {
   const group = findGroupById(state.data.root, groupId);
   if (!group) return;
   group.entries = (group.entries || []).filter(e => e.id !== entryId);
+  markUnsaved();
+  renderTree();
+  renderEntries(groupId);
+}
+
+function duplicateEntry(entryId, groupId) {
+  const group = findGroupById(state.data.root, groupId);
+  if (!group) return;
+  const idx = (group.entries || []).findIndex(e => e.id === entryId);
+  if (idx === -1) return;
+  const original = group.entries[idx];
+  const now = new Date().toISOString();
+  const copy = { ...original, id: crypto.randomUUID(), title: original.title + ' (còpia)', created: now, modified: now };
+  group.entries.splice(idx + 1, 0, copy);
   markUnsaved();
   renderTree();
   renderEntries(groupId);
@@ -883,6 +920,237 @@ async function importCSV() {
   renderTree();
   renderCurrentView();
   showToast(`${count} entrades importades`, 'success');
+}
+
+// ===== FTP =====
+
+function _uint8ToBase64(bytes) {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+async function _checkFTPProxy() {
+  try {
+    const ctrl  = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 2000);
+    const r     = await fetch(`${FTP_PROXY}/ping`, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!r.ok) return false;
+    const json = await r.json();
+    return json.app === 'qmrClau FTP Proxy';
+  } catch {
+    return false;
+  }
+}
+
+async function _ftpDownload(cfg) {
+  const r = await fetch(`${FTP_PROXY}/download`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(cfg),
+  });
+  if (r.status === 404) return null;           // fitxer no existeix
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ error: r.statusText }));
+    throw new Error(err.error || r.statusText);
+  }
+  return new Uint8Array(await r.arrayBuffer());
+}
+
+async function _ftpUpload(cfg, encryptedBytes) {
+  const r = await fetch(`${FTP_PROXY}/upload`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...cfg, data: _uint8ToBase64(encryptedBytes) }),
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ error: r.statusText }));
+    throw new Error(err.error || r.statusText);
+  }
+}
+
+function _loadFTPConfig() {
+  try { return JSON.parse(localStorage.getItem('qmrclau_ftp') || 'null'); }
+  catch { return null; }
+}
+
+function _saveFTPConfig(cfg) {
+  // Desa la configuració però NO la contrasenya per seguretat
+  localStorage.setItem('qmrclau_ftp', JSON.stringify({
+    host: cfg.host, port: cfg.port, username: cfg.username,
+    path: cfg.path, tls: cfg.tls,
+  }));
+}
+
+function dlgFTP(saved) {
+  return new Promise(resolve => {
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+      <div class="modal-title">🌐 Connexió FTP</div>
+      <div class="modal-body">
+        <div class="ftp-grid">
+          <div class="form-group" style="grid-column:1/3">
+            <label class="form-label">Servidor (host)</label>
+            <input type="text" class="form-input" id="ftp-host" placeholder="ftp.exemple.com" value="${_esc(saved?.host || '')}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Port</label>
+            <input type="number" class="form-input" id="ftp-port" value="${saved?.port ?? 21}" min="1" max="65535">
+          </div>
+          <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;padding-bottom:2px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text);font-size:.85rem">
+              <input type="checkbox" id="ftp-tls" ${saved?.tls ? 'checked' : ''} style="width:16px;height:16px;accent-color:var(--accent)">
+              FTPS (TLS)
+            </label>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Usuari</label>
+            <input type="text" class="form-input" id="ftp-user" autocomplete="username" placeholder="anonymous" value="${_esc(saved?.username || '')}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Contrasenya FTP</label>
+            <input type="password" class="form-input" id="ftp-pwd" autocomplete="current-password" placeholder="Contrasenya FTP">
+          </div>
+          <div class="form-group" style="grid-column:1/3">
+            <label class="form-label">Ruta del fitxer al servidor</label>
+            <input type="text" class="form-input" id="ftp-path" placeholder="/qmrclau/mydb.vkdb" value="${_esc(saved?.path || '')}">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary">Cancel·la</button>
+        <button type="button" class="btn btn-primary">Connectar</button>
+      </div>`;
+
+    const hostEl   = wrap.querySelector('#ftp-host');
+    const portEl   = wrap.querySelector('#ftp-port');
+    const tlsEl    = wrap.querySelector('#ftp-tls');
+    const userEl   = wrap.querySelector('#ftp-user');
+    const pwdEl    = wrap.querySelector('#ftp-pwd');
+    const pathEl   = wrap.querySelector('#ftp-path');
+    const cancelBtn = wrap.querySelector('.btn-secondary');
+    const okBtn     = wrap.querySelector('.btn-primary');
+
+    let resolved = false;
+    const done = val => { if (!resolved) { resolved = true; _hideModal(); resolve(val); } };
+
+    okBtn.addEventListener('click', () => {
+      if (!hostEl.value.trim()) { hostEl.focus(); showToast('El servidor és obligatori', 'warning'); return; }
+      if (!pathEl.value.trim()) { pathEl.focus(); showToast('La ruta del fitxer és obligatòria', 'warning'); return; }
+      done({
+        host:     hostEl.value.trim(),
+        port:     parseInt(portEl.value) || 21,
+        tls:      tlsEl.checked,
+        username: userEl.value.trim(),
+        password: pwdEl.value,
+        path:     pathEl.value.trim(),
+      });
+    });
+    cancelBtn.addEventListener('click', () => done(null));
+    wrap.addEventListener('keydown', e => {
+      if (e.key === 'Escape') done(null);
+      if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') okBtn.click();
+    });
+
+    _showModal(wrap);
+    requestAnimationFrame(() => (hostEl.value ? pathEl.focus() : hostEl.focus()));
+  });
+}
+
+async function openFTP() {
+  // Verificar que el proxy estigui en marxa
+  const proxyOk = await _checkFTPProxy();
+  if (!proxyOk) {
+    await dlgAlert(
+      'El proxy FTP no s\'està executant.\n\n' +
+      'Per usar FTP des del navegador, obre una terminal i executa:\n\n' +
+      '    python ftp_proxy.py\n\n' +
+      'Accedeix llavors a la PWA via:\n' +
+      '    http://localhost:8766/app/'
+    );
+    return;
+  }
+
+  const saved = _loadFTPConfig();
+  const cfg   = await dlgFTP(saved);
+  if (!cfg) return;
+
+  _saveFTPConfig(cfg);
+
+  showToast('Connectant al servidor FTP…', '');
+
+  let fileBytes;
+  try {
+    fileBytes = await _ftpDownload(cfg);
+  } catch (e) {
+    await dlgAlert('Error de connexió FTP:\n' + e.message);
+    return;
+  }
+
+  let dbData;
+  if (fileBytes === null) {
+    // Fitxer no existeix → oferir crear-lo
+    const create = await dlgConfirm(
+      `El fitxer "${cfg.path}" no existeix al servidor.\n\nVols crear una nova base de dades en aquesta ruta?`
+    );
+    if (!create) return;
+
+    const password = await dlgPasswordCreate('Crea la contrasenya mestra');
+    if (!password) return;
+
+    dbData = createEmptyDB();
+    state.data           = dbData;
+    state.password       = password;
+    state.fileHandle     = null;
+    state.fileName       = cfg.path.split('/').pop();
+    state.unsaved        = false;
+    state.ftpConfig      = cfg;
+    state.currentGroupId = dbData.root.children[0]?.id ?? dbData.root.id;
+    state.expandedGroups = new Set([dbData.root.id]);
+    state.searchQuery    = '';
+
+    showMain();
+
+    // Pujar la nova BD al servidor
+    try {
+      const encrypted = await encryptDB(dbData, password);
+      await _ftpUpload(cfg, encrypted);
+      showToast('Nova base de dades creada al servidor FTP', 'success');
+    } catch (e) {
+      showToast('Error en pujar al FTP: ' + e.message, 'danger');
+    }
+    return;
+  }
+
+  // Fitxer descarregat → demanar contrasenya mestra
+  const password = await dlgPassword(
+    'Obre la base de dades FTP',
+    `Contrasenya per a "${cfg.path.split('/').pop()}"`
+  );
+  if (password === null) return;
+
+  try {
+    const { data, ver } = await decryptDB(fileBytes, password);
+    dbData = (ver <= 2 || ('groups' in data && Array.isArray(data.groups)))
+      ? migrateV2toV3(data) : data;
+  } catch (e) {
+    await dlgAlert('Error en desxifrar: ' + e.message);
+    return;
+  }
+
+  state.data           = dbData;
+  state.password       = password;
+  state.fileHandle     = null;
+  state.fileName       = cfg.path.split('/').pop();
+  state.unsaved        = false;
+  state.ftpConfig      = cfg;
+  state.currentGroupId = dbData.root.children[0]?.id ?? dbData.root.id;
+  state.expandedGroups = new Set([dbData.root.id]);
+  state.searchQuery    = '';
+
+  showMain();
+  showToast(`"${state.fileName}" obert des de FTP`, 'success');
 }
 
 // ===== TOAST =====
@@ -1182,7 +1450,10 @@ function dlgEntry(entry) {
         </div>
         <div class="form-group">
           <label class="form-label">URL</label>
-          <input type="url" id="de-url" class="form-input" value="${_esc(entry?.url || '')}" placeholder="https://exemple.com">
+          <div class="url-wrap">
+            <input type="url" id="de-url" class="form-input" value="${_esc(entry?.url || '')}" placeholder="https://exemple.com">
+            <button type="button" id="de-url-open" class="url-open-btn" title="Obrir URL al navegador">🌐</button>
+          </div>
         </div>
         <div class="form-group">
           <label class="form-label">Notes</label>
@@ -1223,6 +1494,14 @@ function dlgEntry(entry) {
         pwdInp.value = pwd;
         updateStrength();
       }
+    });
+
+    // URL open button
+    const urlInp    = wrap.querySelector('#de-url');
+    const urlOpenBtn = wrap.querySelector('#de-url-open');
+    urlOpenBtn.addEventListener('click', () => {
+      const url = urlInp.value.trim();
+      if (url) window.open(url, '_blank', 'noopener');
     });
 
     wrap.querySelector('#de-ok').addEventListener('click', () => {

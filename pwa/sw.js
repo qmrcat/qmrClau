@@ -1,5 +1,5 @@
 // Service Worker for qmrClau PWA
-const CACHE_NAME = 'qmrclau-v3';
+const CACHE_NAME = 'qmrclau-v6';
 const ASSETS = [
   './',
   './index.html',

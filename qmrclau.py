@@ -1165,6 +1165,8 @@ class QmrClauApp:
         btn_copy.pack(side="left", padx=2); self._tip(btn_copy, "Copiar contrasenya")
         btn_edit = self._make_small_button(bf, "✏️", lambda i=idx: self._edit_entry(i))
         btn_edit.pack(side="left", padx=2); self._tip(btn_edit, "Editar entrada")
+        btn_dup = self._make_small_button(bf, "⧉", lambda i=idx: self._duplicate_entry(i))
+        btn_dup.pack(side="left", padx=2); self._tip(btn_dup, "Duplicar entrada")
         btn_move = self._make_small_button(bf, "📦", lambda i=idx: self._move_entry(i))
         btn_move.pack(side="left", padx=2); self._tip(btn_move, "Moure a un altre grup")
         btn_del = self._make_small_button(bf, "🗑️", lambda i=idx: self._delete_entry(i))
@@ -1209,6 +1211,20 @@ class QmrClauApp:
     def _edit_entry(self, idx):
         group = self._get_current_group()
         if group: self._entry_dialog(entry=group["entries"][idx], idx=idx)
+
+    def _duplicate_entry(self, idx):
+        import copy, uuid
+        group = self._get_current_group()
+        if not group: return
+        original = group["entries"][idx]
+        duplicate = copy.deepcopy(original)
+        duplicate["id"] = str(uuid.uuid4())
+        duplicate["title"] = original.get("title", "") + " (còpia)"
+        duplicate["created"] = datetime.now().isoformat()
+        duplicate["modified"] = datetime.now().isoformat()
+        group["entries"].insert(idx + 1, duplicate)
+        self.unsaved_changes = True
+        self._refresh_tree(); self._refresh_entries(); self._update_title()
 
     def _delete_entry(self, idx):
         group = self._get_current_group()
@@ -1287,6 +1303,12 @@ class QmrClauApp:
                     self._show_password_generator(on_select=_cb)
                 btn_gen_full = self._make_small_button(frame, "⚡", use_generated, COLORS["bg_entry"])
                 btn_gen_full.pack(side="left", padx=(4, 0)); self._tip(btn_gen_full, "Obrir el generador de contrasenyes")
+            if key == "url":
+                def open_url(_e=e):
+                    url = _e.get().strip()
+                    if url: webbrowser.open(url)
+                btn_url = self._make_small_button(frame, "🌐", open_url, COLORS["bg_entry"])
+                btn_url.pack(side="left", padx=(4, 0)); self._tip(btn_url, "Obrir URL al navegador")
                 sf = tk.Frame(dialog, bg=COLORS["bg"]); sf.pack(fill="x", padx=24, pady=(4, 0))
                 sc = tk.Canvas(sf, height=6, bg=COLORS["bg_entry"], highlightthickness=0); sc.pack(fill="x")
                 sl = tk.Label(sf, text="", font=("Segoe UI", 9), fg=COLORS["text_dim"], bg=COLORS["bg"]); sl.pack(anchor="w")
